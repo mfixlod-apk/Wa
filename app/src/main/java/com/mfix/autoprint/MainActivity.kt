@@ -23,10 +23,12 @@ class MainActivity : AppCompatActivity() {
         root.addView(status)
         root.addView(MaterialButton(this).apply { text = "REFRESH USB PRINTER"; setOnClickListener { scanUsb() } })
         root.addView(MaterialButton(this).apply { text = "ENABLE PRINT SERVICE"; setOnClickListener { startActivity(Intent(Settings.ACTION_PRINT_SETTINGS)) } })
-        root.addView(MaterialButton(this).apply { text = "TEST PRINT"; setOnClickListener { status.text = if (selected == null) "No USB printer selected" else "Printer detected. Test transport is next." } })
+        root.addView(MaterialButton(this).apply { text = "TEST PRINT"; setOnClickListener { testPrint() } })
         setContentView(root)
         scanUsb()
     }
+
+    override fun onResume() { super.onResume(); scanUsb() }
 
     private fun scanUsb() {
         val devices = usb.findDevices()
@@ -35,7 +37,14 @@ class MainActivity : AppCompatActivity() {
             val d = selected!!
             val name = d.productName ?: "USB printer"
             if (!usb.hasPermission(d)) usb.requestPermission(d)
-            "USB detected: " + name
+            if (usb.hasPermission(d)) "USB ready: " + name else "USB detected. Approve permission, then press Test Print."
         }
+    }
+
+    private fun testPrint() {
+        val device = selected ?: run { status.text = "No USB printer found"; return }
+        status.text = "Printing test..."
+        val result = UsbEscPosPrinter(this).printTest(device)
+        status.text = if (result.isSuccess) "Test sent to printer successfully" else "Print error: " + (result.exceptionOrNull()?.message ?: "Unknown")
     }
 }
