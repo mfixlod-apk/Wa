@@ -1,6 +1,7 @@
 package com.mfix.autoprint
 
 import android.content.Intent
+import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.os.Bundle
 import android.provider.Settings
@@ -19,7 +20,7 @@ class MainActivity : AppCompatActivity() {
         usb = UsbPrinterManager(this)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(48,64,48,48) }
         root.addView(TextView(this).apply { text = "MFIX AutoPrint\nAutomatic Thermal Printing"; textSize = 24f })
-        status = TextView(this).apply { textSize = 16f; text = "USB printer: scanning..."; setPadding(0,32,0,32) }
+        status = TextView(this).apply { textSize = 15f; setPadding(0,32,0,32) }
         root.addView(status)
         root.addView(MaterialButton(this).apply { text = "REFRESH USB PRINTER"; setOnClickListener { scanUsb() } })
         root.addView(MaterialButton(this).apply { text = "ENABLE PRINT SERVICE"; setOnClickListener { startActivity(Intent(Settings.ACTION_PRINT_SETTINGS)) } })
@@ -30,21 +31,41 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() { super.onResume(); scanUsb() }
 
+    private fun isPrinterCandidate(d: UsbDevice): Boolean {
+        for (i in 0 until d.interfaceCount) {
+            val intf = d.getInterface(i)
+            for (e in 0 until intf.endpointCount) {
+                val ep = intf.getEndpoint(e)
+                if (ep.direction == UsbConstants.USB_DIR_OUT && ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK) return true
+            }
+        }
+        return false
+    }
+
     private fun scanUsb() {
         val devices = usb.findDevices()
-        selected = devices.firstOrNull()
-        status.text = if (selected == null) "No USB printer found. Connect Xprinter and press Refresh." else {
+        selected = devices.firstOrNull { isPrinterCandidate(it) }
+        status.text = if (selected == null) {
+            "NO USB PRINTER FOUND\nDevices detected: " + devices.size
+        } else {
             val d = selected!!
             val name = d.productName ?: "USB printer"
-            if (!usb.hasPermission(d)) usb.requestPermission(d)
-            if (usb.hasPermission(d)) "USB ready: " + name else "USB detected. Approve permission, then press Test Print."
+            "PRINTER DETECTED\n" + name + "\nVID:" + d.vendorId + " PID:" + d.productId + "\nPermission: " + usb.hasPermission(d)
         }
     }
 
     private fun testPrint() {
-        val device = selected ?: run { status.text = "No USB printer found"; return }
-        status.text = "Printing test..."
+        val device = selected ?: run { status.text = "NO PRINTER DETECTED"; return }
+        if (!usb.hasPermission(device)) {
+            status.text = "REQUESTING USB PERMISSION..."
+            usb.requestPermission(device)
+            return
+        }
+        status.text = "SENDING TEST PRINT..."
         val result = UsbEscPosPrinter(this).printTest(device)
-        status.text = if (result.isSuccess) "Test sent to printer successfully" else "Print error: " + (result.exceptionOrNull()?.message ?: "Unknown")
+        status.text = result.fold(
+            onSuccess = { "SUCCESS\n" + it },
+            onFailure = { "PRINT ERROR\n" + (it.message ?: "Unknown") }
+        )
     }
 }
