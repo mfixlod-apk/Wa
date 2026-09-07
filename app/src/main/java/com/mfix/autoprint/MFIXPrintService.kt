@@ -11,6 +11,7 @@ import android.printservice.PrintService
 import android.printservice.PrinterDiscoverySession
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FileInputStream
 import kotlin.math.max
 
 class MFIXPrintService : PrintService() {
@@ -47,9 +48,16 @@ class MFIXPrintService : PrintService() {
                     error("USB permission required. Open MFIX AutoPrint and grant printer permission once.")
                 }
 
-                val pdf = File(cacheDir, "printjob-\${System.currentTimeMillis()}.pdf")
-                printJob.document.data.use { input ->
-                    FileOutputStream(pdf).use { output -> input.copyTo(output) }
+                val pdf = File(cacheDir, "printjob-${System.currentTimeMillis()}.pdf")
+                val source = printJob.document.data
+                    ?: error("Print job has no document data")
+                source.use { pfd ->
+                    FileInputStream(pfd.fileDescriptor).use { input ->
+                        FileOutputStream(pdf).use { output ->
+                            input.copyTo(output)
+                            output.flush()
+                        }
+                    }
                 }
 
                 val bytes = renderPdfToEscPos(pdf)
